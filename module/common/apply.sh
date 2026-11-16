@@ -3,16 +3,16 @@
 #
 # Roughly:
 #   1. load t9015rate.ko so the HDMI audio link can run at 192 kHz
-#   2. mount a copy of the audio policy with TrueHD added to the surround list
-#   3. mount a copy of aml_audio_config.json with onn's hidden options turned on
-#   4. flip the TrueHD prop on and the "always DD+" prop off
-#   5. restart audio so it all takes effect, then put back the user's mode
-#   6. turn on the "Audio output mode" row in Settings
+#   2. mount the DTS-HD-patched audio HAL binary
+#   3. mount a copy of the audio policy with TrueHD and DTS_HD added
+#   4. mount a copy of aml_audio_config.json with passthrough options on
+#   5. flip the TrueHD prop on and the "always DD+" prop off
+#   6. restart audio so it all takes effect, then set Passthrough mode
+#   7. turn on the "Audio output mode" row in Settings
 #
 # If anything goes wrong partway, everything done so far is put back.
-# We never pick the audio mode ourselves, that's the user's call in onn's menu.
 
-STATE=/data/adb/onn_truehd
+STATE=/data/adb/onn_lossless
 LOG=$STATE/apply.log
 PENDING=$STATE/apply.pending
 GEN_POLICY=$STATE/audio_policy_configuration.xml
@@ -27,7 +27,6 @@ mkdir -p "$STATE"
 log() { echo "$(date '+%F %T') $*" >> "$LOG"; }
 
 set_status() {
-	# "Display & Sound" would break the sed below, so escape & | and \ first
 	local text
 	text=$(printf '%s' "$1" | sed 's/[&|\\]/\\&/g')
 	sed -i "s|^description=.*|description=$text|" "$MODDIR/module.prop"
@@ -53,8 +52,6 @@ audio_restart() {
 	return 1
 }
 
-# droidaudio only reads the HAL's feature flags when it starts, so it needs
-# a kick after the HAL restart too
 droidaudio_restart() {
 	/system/bin/stop droidaudio
 	/system/bin/start droidaudio
@@ -67,7 +64,6 @@ droidaudio_restart() {
 	return 1
 }
 
-# /odm is really a symlink to /oem, and /proc/mounts has the real path
 mounted() { grep -q " $(readlink -f "$1") " /proc/1/mounts; }
 bind() { $BB nsenter -t 1 -m -- /system/bin/mount --bind "$1" "$2"; }
 unbind() { mounted "$1" && $BB nsenter -t 1 -m -- /system/bin/umount "$1"; }
@@ -78,6 +74,7 @@ rollback() {
 	log "rolling back"
 	unbind "$AML_CONFIG"
 	unbind "$POLICY"
+	unbind "$AUDIO_HAL"
 	resetprop --delete "$TRUEHD_PROP" 2>/dev/null
 	[ -n "$OLD_FORCEDDP" ] && resetprop "$FORCEDDP_PROP" "$OLD_FORCEDDP"
 	grep -q '^t9015rate ' /proc/modules && /system/bin/rmmod t9015rate
@@ -94,28 +91,29 @@ fail() {
 	exit 0
 }
 
-# Stick DOLBY_TRUEHD into the <surroundSound> list, then make sure the result
-# is exactly one line longer and still ends properly
+# Add both DOLBY_TRUEHD and DTS_HD to the <surroundSound> format list
 make_policy() {
 	awk '
 		/<surroundSound>/ { in_ss = 1 }
 		in_ss && /<\/formats>/ && !done {
 			match($0, /^[ \t]*/)
-			print substr($0, 1, RLENGTH) "    <format name=\"AUDIO_FORMAT_DOLBY_TRUEHD\" />"
+			indent = substr($0, 1, RLENGTH) "    "
+			if (!has_truehd) print indent "<format name=\"AUDIO_FORMAT_DOLBY_TRUEHD\" />"
+			if (!has_dtshd)  print indent "<format name=\"AUDIO_FORMAT_DTS_HD\" />"
 			done = 1
 		}
+		in_ss && /AUDIO_FORMAT_DOLBY_TRUEHD/ { has_truehd = 1 }
+		in_ss && /AUDIO_FORMAT_DTS_HD/ { has_dtshd = 1 }
 		{ print }
 		/<\/surroundSound>/ { in_ss = 0 }
 	' "$POLICY" > "$GEN_POLICY" || return 1
 	surround_has_truehd "$GEN_POLICY" || return 1
-	[ "$(wc -l < "$GEN_POLICY")" -eq $(($(wc -l < "$POLICY") + 1)) ] || return 1
+	surround_has_dtshd "$GEN_POLICY" || return 1
 	tail -n 3 "$GEN_POLICY" | grep -q '</audioPolicyConfiguration>' || return 1
 	chmod 0644 "$GEN_POLICY"
 	chcon u:object_r:vendor_configs_file:s0 "$GEN_POLICY"
 }
 
-# compat_check already matched the stock file's sha256, so we know what's in
-# it: the same three HDMI keys, plus the three flags that unhide the options
 make_aml_config() {
 	cat > "$GEN_AML_CONFIG" <<-'EOF'
 	{
@@ -133,17 +131,14 @@ make_aml_config() {
 
 log "---- boot $(getprop ro.boot.bootreason) uptime $(cut -d' ' -f1 /proc/uptime)s"
 
-# apply.pending only exists while steps 1-5 run. Finding it here means the
-# box went down in the middle last time, so back off and let the user decide.
 if [ -f "$PENDING" ]; then
 	rm -f "$PENDING"
 	overlay_set disable
 	touch "$MODDIR/disable"
-	set_status "Disabled itself: the box rebooted while TrueHD passthrough was being applied. Re-enable in Magisk to try again. Log: $LOG"
+	set_status "Disabled itself: the box rebooted while passthrough was being applied. Re-enable in Magisk to try again. Log: $LOG"
 	exit 0
 fi
 
-# make sure the Settings row isn't left on if we bail out here
 if ! compat_check || ! compat_runtime; then
 	overlay_set disable
 	fail "$COMPAT_REASON"
@@ -153,7 +148,7 @@ command -v resetprop >/dev/null || fail "resetprop not found"
 touch "$PENDING"
 sync
 
-# 1. kernel helper
+# 1. Kernel helper for 192 kHz HDMI audio (needed for TrueHD)
 if ! grep -q '^t9015rate ' /proc/modules; then
 	base=$(t9015_data_base)
 	case "$base" in
@@ -166,39 +161,55 @@ if ! grep -q '^t9015rate ' /proc/modules; then
 	log "kernel helper loaded (data_base=$base)"
 fi
 
-# 2. audio policy
-if ! surround_has_truehd "$POLICY"; then
+# 2. Patched HAL with DTS-HD support
+PATCHED_HAL="$MODDIR/hal/audio.primary.amlogic.patched.so"
+if [ ! -f "$PATCHED_HAL" ]; then
+	fail "patched HAL binary not found"
+fi
+cp "$PATCHED_HAL" "$STATE/audio.primary.amlogic.so"
+chmod 0644 "$STATE/audio.primary.amlogic.so"
+chcon u:object_r:vendor_file:s0 "$STATE/audio.primary.amlogic.so"
+bind "$STATE/audio.primary.amlogic.so" "$AUDIO_HAL" || fail "could not mount the patched HAL" rollback
+log "patched HAL mounted"
+
+# 3. Audio policy with TrueHD and DTS_HD in surround formats
+if ! surround_has_truehd "$POLICY" || ! surround_has_dtshd "$POLICY"; then
 	make_policy || fail "could not build the edited audio policy" rollback
 	bind "$GEN_POLICY" "$POLICY" || fail "could not mount the edited audio policy" rollback
 	log "audio policy mounted"
 fi
 
-# 3. HAL config
+# 4. HAL config with Passthrough/DRC options enabled
 if ! grep -q Passthrough_Audio_Config "$AML_CONFIG"; then
 	make_aml_config || fail "could not write the audio HAL config" rollback
 	bind "$GEN_AML_CONFIG" "$AML_CONFIG" || fail "could not mount the audio HAL config" rollback
 	log "audio HAL config mounted"
 fi
 
-# 4. props (memory only, gone on reboot)
+# 5. Props for TrueHD (memory only, gone on reboot)
 OLD_FORCEDDP=$(getprop "$FORCEDDP_PROP")
 resetprop "$TRUEHD_PROP" true
 resetprop "$FORCEDDP_PROP" false
 log "props set ($FORCEDDP_PROP was '$OLD_FORCEDDP')"
 
-# 5. restart audio. The HAL comes back up in Automatic no matter what was
-# saved, so hand it the saved mode again afterwards.
+# 6. Restart audio and set Passthrough mode
 audio_restart || fail "audio services did not come back" rollback
 droidaudio_restart || fail "vendor audio service did not come back" rollback
 log "audio services restarted"
+
 mode=$(digital_mode_get)
-digital_mode_set "$mode" || fail "could not hand the saved audio mode to the HAL" rollback
-log "audio mode: $(mode_name "$mode") (HAL reports $(hal_mode))"
+if [ "$mode" != 3 ]; then
+	digital_mode_set 3 || fail "could not set Passthrough mode" rollback
+	log "set Passthrough mode (was: $(mode_name "$mode"))"
+else
+	digital_mode_set "$mode" || fail "could not hand the saved audio mode to the HAL" rollback
+	log "audio mode: Passthrough"
+fi
+log "HAL reports: $(hal_mode)"
 
 rm -f "$PENDING"
 
-# 6. Settings row. Only if Settings is the exact build the overlay was made
-# from. If not, no big deal, the Magisk Action button opens the same menu.
+# 7. Settings overlay for the Audio output mode row
 if settings_overlay_compatible && overlay_set enable; then
 	where="in Settings > Display & Sound > Audio output mode"
 	log "Settings row enabled"
@@ -208,8 +219,4 @@ else
 	log "Settings row not enabled (Settings app is a different build)"
 fi
 
-if [ "$mode" = 3 ]; then
-	set_status "Active. Audio output mode: Passthrough, so TrueHD/Atmos is sent untouched. Change it $where."
-else
-	set_status "Active. Audio output mode: $(mode_name "$mode"). For lossless TrueHD/Atmos choose Passthrough $where."
-fi
+set_status "Active. Lossless passthrough (TrueHD/Atmos + DTS-HD MA/DTS:X) enabled. Change mode $where."
