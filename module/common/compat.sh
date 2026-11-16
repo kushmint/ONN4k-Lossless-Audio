@@ -4,6 +4,7 @@
 
 SUPPORTED_BUILDS="
 jarvis2|5.15.196-android14-11-g3d26c188ef7e-ab14657224|a8d99a85c38e78a7850ae25aa0f29b5f8545d1cf7011f5d73e496b9e1e0e324a
+jarvis2|5.15.196-android14-11-g3d26c188ef7e-ab14657224|98a914e0fa1b3755d4caf1db1912f5e7f4eb1e9923f5891786b503c6e3941c43
 "
 
 T9015_KO=/vendor/lib/modules/amlogic-snd-codec-t9015.ko
