@@ -121,7 +121,11 @@ then deliberately hides it from Android. Three binary patches to
 
 The module also adds `AUDIO_FORMAT_DTS_HD` as a static profile in the audio
 policy XML's `compress offload` and `ms12 direct` mixPorts, as a belt-and-
-suspenders alongside the dynamic profile from patch 2.
+suspenders alongside the dynamic profile from patch 2. It also adds DTS and
+DTS_HD profiles to the HDMI Out device port itself, so that
+`AudioDeviceInfo.getEncodings()` exposes DTS-HD to apps — without this, apps
+that check HDMI device capabilities (rather than AudioPolicyManager profiles)
+wouldn't see DTS-HD as a supported output format.
 
 All three patches together mean DTS-HD MA becomes a first-class citizen in the
 audio pipeline — visible to Android, visible to the framework, and passing
