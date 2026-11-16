@@ -2,7 +2,7 @@
 """
 Patch audio.primary.amlogic.so to enable DTS-HD MA / DTS:X passthrough.
 
-Two binary patches:
+Three binary patches:
 
 Patch 1 — hdmi_encodings handler (VA 0x9ab9a, 34 bytes)
   Replaces dead logging code with a check of the DTS_HD capability flag
@@ -17,6 +17,21 @@ Patch 2 — sup_formats DTS_HD gate (VA 0xa6f22, 2 bytes)
   DTS decode library flag (adev->0x6c0 != 0). NOPing the CBZ makes the
   append unconditional, so AudioPolicyManager creates a DTS_HD dynamic
   profile on HDMI Out.
+
+Patch 3 — get_sink_format AUTO→BYPASS redirect (2 × 1 byte)
+  The HAL's get_sink_format function uses adev+0x194 (digital audio mode)
+  to decide output format. Mode 4 (AUTO) re-encodes lossless to lossy;
+  mode 6 (BYPASS) passes raw bitstream. Since the framework always boots
+  the HAL into AUTO mode and there is no reliable shell path to push
+  BYPASS, we change the CMP r0,#6 (BYPASS check) to CMP r0,#4 (AUTO
+  check) at both the non-TV and TV code paths. This makes AUTO behave
+  like BYPASS: DTS-HD/DTS:X/TrueHD pass through when the sink supports
+  them, with graceful fallback otherwise.
+
+IMPORTANT: bind-mounted files MUST have SELinux context u:object_r:vendor_file:s0
+or audioserver crashes with "HW_AV_SYNC requested but HAL does not implement
+pause and resume". The crash is from SELinux denying access to the stream's
+function pointers, not from missing implementations.
 
 The stock HAL is 32-bit ARM (Thumb-2). Ghidra base address is 0x10000.
 """
@@ -141,6 +156,20 @@ def patch(input_path, output_path):
     assert bytes(data[nop_off:nop_off+2]) == bytes.fromhex('50b1'), \
         "CBZ mismatch at VA 0xa6f22 — wrong binary?"
     data[nop_off:nop_off+2] = bytes.fromhex('00bf')  # NOP
+
+    # ── Patch 3: get_sink_format AUTO→BYPASS redirect ──
+    # Change CMP r0,#6 to CMP r0,#4 so AUTO mode (4) takes the BYPASS path
+    # Non-TV path (Ghidra VA 0xac6e2)
+    bypass_off1 = va_to_file(0xac6e2)
+    assert bytes(data[bypass_off1:bypass_off1+2]) == bytes.fromhex('0628'), \
+        "CMP mismatch at VA 0xac6e2 (non-TV mode check) — wrong binary?"
+    data[bypass_off1] = 0x04  # CMP r0,#6 → CMP r0,#4
+
+    # TV path (Ghidra VA 0xac680)
+    bypass_off2 = va_to_file(0xac680)
+    assert bytes(data[bypass_off2:bypass_off2+2]) == bytes.fromhex('0628'), \
+        "CMP mismatch at VA 0xac680 (TV mode check) — wrong binary?"
+    data[bypass_off2] = 0x04  # CMP r0,#6 → CMP r0,#4
 
     with open(output_path, 'wb') as f:
         f.write(data)
