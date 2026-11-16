@@ -1,12 +1,11 @@
-# onn 4K Pro TrueHD / Atmos passthrough
+# onn 4K Pro Lossless Audio Passthrough
 
-A Magisk module that gets the onn 4K Pro (2026) to send real Dolby TrueHD and
-TrueHD Atmos to your receiver or soundbar over HDMI.
+A Magisk module that enables **Dolby TrueHD/Atmos** and **DTS-HD Master Audio/DTS:X**
+passthrough over HDMI on the onn 4K Pro (2026).
 
-Out of the box the onn won't do it. Play a movie with a TrueHD Atmos track and
-it gets converted to Dolby Digital Plus (or plain PCM) before it leaves the
-box, so you lose the lossless audio. The hardware can handle it fine, it's
-just turned off in the firmware. This module turns it back on.
+Out of the box the onn converts everything to Dolby Digital Plus (or PCM) before
+it leaves the box, so you lose the lossless audio. The hardware supports it
+fine — it's gated in the firmware. This module removes those gates.
 
 It also brings back a few sound settings onn hid:
 
@@ -22,32 +21,76 @@ It also brings back a few sound settings onn hid:
 | Chip | Amlogic S905X5M |
 | Android | Android TV 14 (API 34) |
 | Firmware | `URO3.260203.035.A1.15640252` |
-| Security patch | 2026-06-01 |
 | Kernel | `5.15.196-android14-11-g3d26c188ef7e-ab14657224` |
 | Magisk | 30.7 |
-| Audio setup | Samsung HW-Q910 soundbar through a Samsung Q90A TV (eARC) |
-| Player | Just Player with audio passthrough on |
 
-The module only installs on that exact firmware. On anything else (another box,
-or the same box after an update) it tells you it's not supported and doesn't
-change anything. If you get it working on another firmware, open an issue.
+The module only installs on that exact firmware. On anything else it tells you
+it's not supported and doesn't change anything. If you get it working on
+another firmware, open an issue.
 
 ## Install
 
-1. You need a rooted box with Magisk.
-2. Flash `onn-truehd-passthrough-v1.0.zip` in Magisk and reboot.
-3. About a minute after it boots, the sound will cut out for a second. That's
-   the module kicking in.
-4. Go to **Settings > Display & Sound > Audio output mode**. This opens onn's
-   sound menu.
-5. Open **Advanced sound settings > Select formats** and pick **Passthrough**.
+1. Root your onn 4K Pro with Magisk.
+2. Flash `onn-lossless-passthrough-v2.0.zip` in Magisk and reboot.
+3. About a minute after boot, the sound cuts out briefly as the module kicks in.
+4. The module automatically sets Passthrough mode. Your receiver should show
+   TrueHD Atmos or DTS-HD MA when playing lossless content.
 
-That's it. Play something with a TrueHD Atmos track in Kodi or Just Player
-(with passthrough turned on in the player) and your receiver should show
-Dolby Atmos. Your choice is remembered across reboots. Pick **Automatic** to go
-back to how onn does it.
+To change the audio mode: **Settings > Display & Sound > Audio output mode**.
+
+To turn it off: disable or remove the module in Magisk and reboot.
 
 To build the zip yourself, run `python3 build-zip.py`.
+
+## How it works
+
+Nothing on the system is permanently modified. Everything happens in memory
+after the box boots and is gone on the next reboot if the module is off.
+
+### TrueHD / Atmos
+
+Based on [Spark-NV's original work](https://github.com/Spark-NV/ONN4k-TrueHD):
+
+- The HDMI multichannel audio link was capped at 96 kHz. TrueHD needs 192 kHz.
+  A small kernel module (`t9015rate.ko`) raises that limit in memory.
+- The firmware already has a TrueHD switch
+  (`ro.vendor.platform.is.aml_truehd_passthrough`), it's just turned off. The
+  module turns it on and turns off the "always DD+" flag.
+- TrueHD gets added to the surround format list in the audio policy XML.
+
+### DTS-HD MA / DTS:X
+
+Two binary patches to `audio.primary.amlogic.so`:
+
+1. **`hdmi_encodings` handler** (34 bytes at file offset `0x7ab9a`): the HAL's
+   `adev_get_parameters("hdmi_encodings")` response drives the DroidLogic
+   framework's format detection. Stock code checks AC3, E_AC3, and Atmos but
+   skips DTS-HD. This patch replaces dead logging code with a check of the
+   DTS-HD EDID capability flag and appends `"dtshd;"` to the response.
+
+2. **`sup_formats` gate** (2-byte NOP at file offset `0x86f22`): the HAL reads
+   DTS-HD support from EDID and logs it, but gates adding `AUDIO_FORMAT_DTS_HD`
+   to the `sup_formats` response behind a DTS decode library flag. NOPing the
+   conditional branch makes the report unconditional, so Android's
+   AudioPolicyManager creates a DTS-HD dynamic profile on HDMI Out.
+
+### Shared
+
+- Mounts `aml_audio_config.json` with `Passthrough_Audio_Config: 1` to unlock
+  Passthrough and DRC options in onn's audio menu.
+- Sets DroidAudio mode 3 (Passthrough) so the HAL sends bitstreams raw instead
+  of re-encoding through MS12.
+- A new **Audio output mode** row in Display & Sound takes you to onn's sound
+  menu (via the Settings overlay).
+
+### Regenerating the patched HAL
+
+```
+python3 patch_hal.py
+```
+
+Reads the stock `audio.primary.amlogic.so` and writes the patched version. The
+script verifies expected bytes at each patch site before writing.
 
 ## Other settings it unlocks
 
@@ -64,50 +107,40 @@ Under **Settings > Display & Sound > Audio options**:
 - **Dolby preferred output**: whether the box sends Dolby MAT or Dolby Digital
   Plus when it's re-encoding audio itself in Automatic mode.
 
-These only matter when the box is decoding or re-encoding the audio. In
-Passthrough the audio goes out exactly as it is in the file.
+These only matter when the box is decoding or re-encoding. In Passthrough the
+audio goes out exactly as it is in the file.
 
-## How it works
-
-Nothing on the system is permanently modified. Everything happens after the
-box boots and is gone on the next reboot if the module is off.
-
-- The HDMI multichannel audio link was capped at 96 kHz. TrueHD needs
-  192 kHz. A small kernel module raises that limit in memory.
-- The firmware already has a TrueHD switch, it's just turned off. The module
-  turns it on, and turns off the setting that forces everything to DD+.
-- TrueHD gets added to the surround format list in Settings.
-- onn's Passthrough and DRC options are hidden behind flags in an audio config
-  file. The module mounts a copy with those flags turned on.
-- A new **Audio output mode** row in Display & Sound takes you to onn's sound
-  menu, which normally has no way in.
-
-The Magisk **Action** button opens the same sound menu and shows what the
-module is doing. The log is at `/data/adb/onn_truehd/apply.log`.
+The Magisk **Action** button opens the sound menu and shows module status.
+The log is at `/data/adb/onn_lossless/apply.log`.
 
 ## What doesn't work
 
 - **96 kHz TrueHD** (rare, mostly music and some test files) plays as stereo
   PCM. That's Dolby's own code on the box failing. 48 kHz TrueHD, which is what
   movies use, works fine.
-- **DTS-HD MA and DTS:X** aren't covered. My Samsung TV doesn't take DTS at
-  all, so I couldn't test it.
-- While TrueHD is playing in Passthrough you won't hear menu click sounds.
-  That's normal for any box doing lossless passthrough.
+- While lossless audio is playing in Passthrough you won't hear menu click
+  sounds. That's normal for any box doing lossless passthrough.
 
 ## Removing it
 
 Disable or remove it in Magisk and reboot. If you can't get into Magisk,
 `adb shell su -c magisk --remove-modules` and reboot.
 
-Your audio output mode setting stays saved after removal. If it was on
-Passthrough, the stock firmware just goes back to sending DD+, so nothing
-breaks. Set it to Automatic first if you want it fully stock.
+Your audio output mode setting stays saved. If it was on Passthrough, the stock
+firmware goes back to sending DD+, so nothing breaks.
 
 ## Source
 
 - `module/` is the Magisk module itself.
+- `module/hal/` contains the patched audio HAL binary.
+- `patch_hal.py` regenerates the patched HAL from the stock binary.
 - `src/kernel/` is the kernel helper (`t9015rate.ko`) and how to build it.
 - `src/overlay/` is the Settings row overlay and its build script.
+
+## Credits
+
+- [Spark-NV](https://github.com/Spark-NV) for the original TrueHD passthrough
+  module, kernel helper, and Settings overlay
+- DTS-HD MA / DTS:X support by kushmint
 
 The kernel helper is GPL-2.0.

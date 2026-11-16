@@ -1,9 +1,7 @@
-# Magisk install script. Won't install unless the firmware is one listed in
-# common/compat.sh.
-
 . "$MODPATH/common/compat.sh"
 
-ui_print "- onn 4K Pro TrueHD/Atmos Passthrough"
+ui_print "- onn 4K Pro Lossless Audio Passthrough"
+ui_print "- TrueHD/Atmos + DTS-HD MA/DTS:X"
 ui_print "- Checking device and firmware"
 
 if ! compat_check; then
@@ -14,8 +12,9 @@ fi
 ui_print "- Supported: $(getprop ro.product.device), kernel $(uname -r)"
 ui_print "- Nothing is written to system partitions. Changes are made"
 ui_print "  in memory after each boot."
-ui_print "- After the reboot, open Settings > Display & Sound >"
-ui_print "  Audio output mode > Select formats and choose Passthrough."
+ui_print "- After the reboot, the module sets Passthrough mode"
+ui_print "  automatically. Change it in Settings > Display & Sound >"
+ui_print "  Audio output mode if needed."
 ui_print "- To turn it off: disable or remove it in Magisk and reboot."
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644
