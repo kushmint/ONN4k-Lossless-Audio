@@ -3,12 +3,19 @@
 #
 # Roughly:
 #   1. load t9015rate.ko so the HDMI audio link can run at 192 kHz
-#   2. mount the DTS-HD-patched audio HAL binary
+#   2. mount the patched audio HAL with DTS-HD support
 #   3. mount a copy of the audio policy with TrueHD and DTS_HD added
-#   4. mount a copy of aml_audio_config.json with passthrough options on
+#   4. mount a copy of aml_audio_config.json with hidden options turned on
 #   5. flip the TrueHD prop on and the "always DD+" prop off
-#   6. restart audio so it all takes effect, then set Passthrough mode
-#   7. turn on the "Audio output mode" row in Settings
+#   6. restart audio so it all takes effect
+#   7. set the HAL's internal mode to Passthrough so bitstreams go through raw
+#   8. turn on the "Audio output mode" row in Settings
+#
+# The user's surround sound setting (Auto / Manual / None) in the standard
+# Android settings controls which formats are advertised to apps. The HAL's
+# internal Passthrough mode is set silently — it only affects whether the HAL
+# sends bitstreams raw or re-encodes them. With Passthrough set, Auto mode
+# works as expected: formats the amp supports get detected and passed through.
 #
 # If anything goes wrong partway, everything done so far is put back.
 
@@ -179,7 +186,7 @@ if ! surround_has_truehd "$POLICY" || ! surround_has_dtshd "$POLICY"; then
 	log "audio policy mounted"
 fi
 
-# 4. HAL config with Passthrough/DRC options enabled
+# 4. HAL config with hidden options enabled
 if ! grep -q Passthrough_Audio_Config "$AML_CONFIG"; then
 	make_aml_config || fail "could not write the audio HAL config" rollback
 	bind "$GEN_AML_CONFIG" "$AML_CONFIG" || fail "could not mount the audio HAL config" rollback
@@ -192,31 +199,25 @@ resetprop "$TRUEHD_PROP" true
 resetprop "$FORCEDDP_PROP" false
 log "props set ($FORCEDDP_PROP was '$OLD_FORCEDDP')"
 
-# 6. Restart audio and set Passthrough mode
+# 6. Restart audio services so they pick up the new HAL and policy
 audio_restart || fail "audio services did not come back" rollback
 droidaudio_restart || fail "vendor audio service did not come back" rollback
 log "audio services restarted"
 
+# 7. Set the HAL's internal mode to Passthrough (3). This is separate from the
+#    user-facing surround sound setting (Auto / Manual / None). It tells the
+#    HAL to send bitstreams raw instead of re-encoding through MS12. Without
+#    this, Auto mode downgrades everything to AC3/DD+.
 mode=$(digital_mode_get)
-if [ "$mode" != 3 ]; then
-	digital_mode_set 3 || fail "could not set Passthrough mode" rollback
-	log "set Passthrough mode (was: $(mode_name "$mode"))"
-else
-	digital_mode_set "$mode" || fail "could not hand the saved audio mode to the HAL" rollback
-	log "audio mode: Passthrough"
-fi
+digital_mode_set 3 || fail "could not set HAL passthrough mode" rollback
+log "HAL passthrough mode set (DroidAudio was: $(mode_name "$mode"), now: Passthrough)"
 log "HAL reports: $(hal_mode)"
 
 rm -f "$PENDING"
 
-# 7. Settings overlay for the Audio output mode row
+# 8. Settings row
 if settings_overlay_compatible && overlay_set enable; then
-	where="in Settings > Display & Sound > Audio output mode"
 	log "Settings row enabled"
-else
-	overlay_set disable
-	where="with the Magisk Action button"
-	log "Settings row not enabled (Settings app is a different build)"
 fi
 
-set_status "Active. Lossless passthrough (TrueHD/Atmos + DTS-HD MA/DTS:X) enabled. Change mode $where."
+set_status "Active. TrueHD/Atmos + DTS-HD MA/DTS:X lossless passthrough enabled. Use surround sound settings (Auto/Manual) as normal. Log: $LOG"

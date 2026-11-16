@@ -12,9 +12,9 @@ fi
 ui_print "- Supported: $(getprop ro.product.device), kernel $(uname -r)"
 ui_print "- Nothing is written to system partitions. Changes are made"
 ui_print "  in memory after each boot."
-ui_print "- After the reboot, the module sets Passthrough mode"
-ui_print "  automatically. Change it in Settings > Display & Sound >"
-ui_print "  Audio output mode if needed."
+ui_print "- After the reboot, lossless passthrough is enabled"
+ui_print "  automatically. Use the standard surround sound settings"
+ui_print "  (Auto / Manual / None) as normal."
 ui_print "- To turn it off: disable or remove it in Magisk and reboot."
 
 set_perm_recursive "$MODPATH" 0 0 0755 0644
