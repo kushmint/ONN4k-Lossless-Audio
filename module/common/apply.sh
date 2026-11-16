@@ -98,16 +98,33 @@ fail() {
 	exit 0
 }
 
-# Add both DOLBY_TRUEHD and DTS_HD to the <surroundSound> format list
+# Inject DTS_HD into the audio policy:
+#   1. Add DTS_HD profile to "compress offload" mixPort (DIRECT+COMPRESS_OFFLOAD,
+#      no HW_AV_SYNC — avoids the audioserver crash from tunnel outputs)
+#   2. Add DTS_HD profile to "ms12 direct" mixPort (DIRECT only)
+#   3. Add DOLBY_TRUEHD and DTS_HD to the <surroundSound> format list
+DTS_HD_PROFILE='<profile name="dtshd raw" format="AUDIO_FORMAT_DTS_HD" samplingRates="44100 48000 88200 96000 192000" channelMasks="AUDIO_CHANNEL_OUT_MONO AUDIO_CHANNEL_OUT_STEREO AUDIO_CHANNEL_OUT_5POINT1 AUDIO_CHANNEL_OUT_7POINT1" />'
 make_policy() {
-	awk '
+	awk -v dtshd_profile="$DTS_HD_PROFILE" '
+		# Insert DTS_HD profile into compress offload and ms12 direct mixPorts
+		/name="compress offload"/ || /name="ms12 direct"/ { in_mix = 1; has_dtshd_mix = 0 }
+		in_mix && /AUDIO_FORMAT_DTS_HD/ { has_dtshd_mix = 1 }
+		in_mix && /<\/mixPort>/ {
+			if (!has_dtshd_mix) {
+				match($0, /^[ \t]*/)
+				indent = substr($0, 1, RLENGTH) "    "
+				print indent dtshd_profile
+			}
+			in_mix = 0
+		}
+		# Insert DTS_HD into surroundSound format list
 		/<surroundSound>/ { in_ss = 1 }
-		in_ss && /<\/formats>/ && !done {
+		in_ss && /<\/formats>/ && !ss_done {
 			match($0, /^[ \t]*/)
 			indent = substr($0, 1, RLENGTH) "    "
 			if (!has_truehd) print indent "<format name=\"AUDIO_FORMAT_DOLBY_TRUEHD\" />"
 			if (!has_dtshd)  print indent "<format name=\"AUDIO_FORMAT_DTS_HD\" />"
-			done = 1
+			ss_done = 1
 		}
 		in_ss && /AUDIO_FORMAT_DOLBY_TRUEHD/ { has_truehd = 1 }
 		in_ss && /AUDIO_FORMAT_DTS_HD/ { has_dtshd = 1 }
@@ -116,6 +133,8 @@ make_policy() {
 	' "$POLICY" > "$GEN_POLICY" || return 1
 	surround_has_truehd "$GEN_POLICY" || return 1
 	surround_has_dtshd "$GEN_POLICY" || return 1
+	grep -q 'AUDIO_FORMAT_DTS_HD.*compress offload\|compress offload.*AUDIO_FORMAT_DTS_HD' "$GEN_POLICY" 2>/dev/null || \
+		grep -q 'dtshd raw' "$GEN_POLICY" || return 1
 	tail -n 3 "$GEN_POLICY" | grep -q '</audioPolicyConfiguration>' || return 1
 	chmod 0644 "$GEN_POLICY"
 	chcon u:object_r:vendor_configs_file:s0 "$GEN_POLICY"
@@ -204,13 +223,13 @@ audio_restart || fail "audio services did not come back" rollback
 droidaudio_restart || fail "vendor audio service did not come back" rollback
 log "audio services restarted"
 
-# 7. Set the HAL's internal mode to Passthrough (3). This is separate from the
-#    user-facing surround sound setting (Auto / Manual / None). It tells the
-#    HAL to send bitstreams raw instead of re-encoding through MS12. Without
-#    this, Auto mode downgrades everything to AC3/DD+.
+# 7. Set DroidAudio to Auto (1). The patched HAL treats AUTO mode (4) as
+#    BYPASS internally — it passes lossless bitstreams raw when the sink
+#    supports them. We set mode 1 (Auto → HAL mode 4) so the patched
+#    path is taken whether or not DroidAudio pushes hdmi_format to the HAL.
 mode=$(digital_mode_get)
-digital_mode_set 3 || fail "could not set HAL passthrough mode" rollback
-log "HAL passthrough mode set (DroidAudio was: $(mode_name "$mode"), now: Passthrough)"
+digital_mode_set 1 || log "WARN: could not set DroidAudio to Auto (non-fatal, HAL defaults to AUTO anyway)"
+log "DroidAudio mode set (was: $(mode_name "$mode"), now: $(mode_name "$(digital_mode_get)"))"
 log "HAL reports: $(hal_mode)"
 
 rm -f "$PENDING"

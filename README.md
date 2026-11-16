@@ -95,7 +95,7 @@ Based on [Spark-NV's original work](https://github.com/Spark-NV/ONN4k-TrueHD):
 ### DTS-HD MA / DTS:X
 
 The stock HAL *detects* DTS-HD from the receiver's EDID and even logs it — but
-then deliberately hides it from Android. Two binary patches to
+then deliberately hides it from Android. Three binary patches to
 `audio.primary.amlogic.so` fix this:
 
 1. **`hdmi_encodings` handler** (34 bytes at offset `0x7ab9a`): the HAL's format
@@ -111,22 +111,21 @@ then deliberately hides it from Android. Two binary patches to
    a full DTS-HD dynamic profile on HDMI Out with proper sample rates and
    channel maps.
 
-Both patches together mean DTS-HD MA becomes a first-class citizen in the audio
-pipeline — visible to Android, visible to the framework, and available to every
-app.
+3. **`get_sink_format` AUTO→BYPASS** (1 byte each at offsets `0x8c6e2` and
+   `0x8c680`): the HAL's output-format decision function checks the internal
+   digital audio mode. Mode 6 (BYPASS) passes bitstreams raw; mode 4 (AUTO)
+   re-encodes lossless to lossy. The framework always boots the HAL into AUTO
+   mode. This patch changes `CMP r0,#6` to `CMP r0,#4` so AUTO takes the
+   BYPASS code path — DTS-HD/DTS:X/TrueHD pass through raw when the receiver
+   supports them, with graceful fallback to lossy otherwise.
 
-### The passthrough engine
+The module also adds `AUDIO_FORMAT_DTS_HD` as a static profile in the audio
+policy XML's `compress offload` and `ms12 direct` mixPorts, as a belt-and-
+suspenders alongside the dynamic profile from patch 2.
 
-The stock HAL has an internal audio mode that controls whether bitstreams are
-passed through raw or re-encoded through Dolby MS12. By default it's set to
-"Auto," which sounds helpful but actually means "re-encode everything to
-DD+/AC3 regardless of what the receiver supports."
-
-The module silently sets the HAL to its internal Passthrough mode on every boot.
-This is completely separate from the user-facing surround sound setting — your
-Auto / Manual / None choice still controls which formats are advertised to apps.
-The internal mode just determines whether the HAL sends those formats as raw
-bitstreams (what you want) or re-encodes them (what stock does).
+All three patches together mean DTS-HD MA becomes a first-class citizen in the
+audio pipeline — visible to Android, visible to the framework, and passing
+through raw to your receiver.
 
 ### Regenerating the patched HAL
 
