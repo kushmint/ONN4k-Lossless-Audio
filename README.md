@@ -33,10 +33,13 @@ another firmware, open an issue.
 1. Root your onn 4K Pro with Magisk.
 2. Flash `onn-lossless-passthrough-v2.0.zip` in Magisk and reboot.
 3. About a minute after boot, the sound cuts out briefly as the module kicks in.
-4. The module automatically sets Passthrough mode. Your receiver should show
-   TrueHD Atmos or DTS-HD MA when playing lossless content.
+4. That's it. Your standard surround sound settings work as normal:
+   - **Auto**: detects what your receiver supports and enables those formats
+   - **Manual**: lets you pick specific formats (TrueHD and DTS-HD now appear)
+   - **None**: PCM only
 
-To change the audio mode: **Settings > Display & Sound > Audio output mode**.
+Play something with a TrueHD Atmos or DTS-HD MA track and your receiver should
+show the lossless format.
 
 To turn it off: disable or remove the module in Magisk and reboot.
 
@@ -77,11 +80,12 @@ Two binary patches to `audio.primary.amlogic.so`:
 ### Shared
 
 - Mounts `aml_audio_config.json` with `Passthrough_Audio_Config: 1` to unlock
-  Passthrough and DRC options in onn's audio menu.
-- Sets DroidAudio mode 3 (Passthrough) so the HAL sends bitstreams raw instead
-  of re-encoding through MS12.
-- A new **Audio output mode** row in Display & Sound takes you to onn's sound
-  menu (via the Settings overlay).
+  DRC options and the internal passthrough capability.
+- Silently sets DroidAudio mode 3 (Passthrough) so the HAL sends bitstreams raw
+  instead of re-encoding through MS12. This is an internal HAL setting, separate
+  from the user-facing surround sound setting (Auto / Manual / None).
+- The standard Android surround settings control which formats are advertised to
+  apps. Auto detects from the receiver's EDID, Manual lets you pick.
 
 ### Regenerating the patched HAL
 
