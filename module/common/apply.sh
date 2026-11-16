@@ -103,6 +103,8 @@ fail() {
 #      no HW_AV_SYNC — avoids the audioserver crash from tunnel outputs)
 #   2. Add DTS_HD profile to "ms12 direct" mixPort (DIRECT only)
 #   3. Add DOLBY_TRUEHD and DTS_HD to the <surroundSound> format list
+#   4. Add DTS and DTS_HD profiles to the HDMI Out device port so
+#      AudioDeviceInfo.getEncodings() exposes them to apps
 DTS_HD_PROFILE='<profile name="dtshd raw" format="AUDIO_FORMAT_DTS_HD" samplingRates="44100 48000 88200 96000 192000" channelMasks="AUDIO_CHANNEL_OUT_MONO AUDIO_CHANNEL_OUT_STEREO AUDIO_CHANNEL_OUT_5POINT1 AUDIO_CHANNEL_OUT_7POINT1" />'
 make_policy() {
 	awk -v dtshd_profile="$DTS_HD_PROFILE" '
@@ -116,6 +118,17 @@ make_policy() {
 				print indent dtshd_profile
 			}
 			in_mix = 0
+		}
+		# Expand bare HDMI Out device port to include DTS and DTS_HD profiles
+		/tagName="HDMI Out".*role="sink"/ && /\/>/ {
+			match($0, /^[ \t]*/)
+			indent = substr($0, 1, RLENGTH)
+			sub(/\/>/, ">", $0)
+			print
+			print indent "    <profile name=\"\" format=\"AUDIO_FORMAT_DTS\" samplingRates=\"32000 44100 48000\" channelMasks=\"AUDIO_CHANNEL_OUT_MONO AUDIO_CHANNEL_OUT_STEREO AUDIO_CHANNEL_OUT_5POINT1 AUDIO_CHANNEL_OUT_7POINT1\" />"
+			print indent "    <profile name=\"\" format=\"AUDIO_FORMAT_DTS_HD\" samplingRates=\"44100 48000 88200 96000 192000\" channelMasks=\"AUDIO_CHANNEL_OUT_MONO AUDIO_CHANNEL_OUT_STEREO AUDIO_CHANNEL_OUT_5POINT1 AUDIO_CHANNEL_OUT_7POINT1\" />"
+			print indent "</devicePort>"
+			next
 		}
 		# Insert DTS_HD into surroundSound format list
 		/<surroundSound>/ { in_ss = 1 }
