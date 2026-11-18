@@ -160,10 +160,15 @@ HDMI transmitter is told `CT_DTS_HD`, and the receiver locks to DTS-HD MA.
 ### Regenerating the pieces
 
 ```
-python3 patch_hal.py <stock-CA-HAL> <out>      # Canadian HAL, patches 1+2
-python3 patch_hal_us.py <stock-US-HAL> <out>   # US HAL, patches 1+2
-sh src/dtshd/build.sh                          # replacement DTS decoder (needs clang)
-python3 src/dtshd/patch_amladecs.py <in> <out> # same wrapper patches the module makes at boot
+# audio.primary.amlogic.so (the HAL): 2 patches, step 1 above
+python3 patch_hal.py <stock-CA-HAL> <out>      # Canadian HAL
+python3 patch_hal_us.py <stock-US-HAL> <out>   # US HAL
+
+# libamladecs.so (decoder wrapper): 3 patches, step 3 above
+python3 src/dtshd/patch_amladecs.py <in> <out> # same patches the module makes at boot
+
+# replacement DTS decoder, step 2 above
+sh src/dtshd/build.sh                          # needs clang
 ```
 
 Every script verifies the expected bytes at each patch site before writing, so
