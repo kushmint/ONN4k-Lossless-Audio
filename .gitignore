@@ -9,3 +9,5 @@ src/kernel/Module.symvers
 src/kernel/modules.order
 __pycache__/
 src/dtshd/*.so
+CLAUDE.md
+CLAUDE-*.md
