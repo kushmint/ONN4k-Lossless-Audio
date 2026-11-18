@@ -1,5 +1,10 @@
 # onn 4K Pro — Full Lossless Audio Passthrough
 
+### ⬇️ [Download onn-lossless-passthrough-v2.1.zip](https://github.com/kushmint/ONN4k-Lossless-Audio/releases/latest/download/onn-lossless-passthrough-v2.1.zip)
+Flash it in Magisk and reboot. [All releases](https://github.com/kushmint/ONN4k-Lossless-Audio/releases)
+
+---
+
 **Unlock the full potential of your onn 4K Pro's audio.** This Magisk module
 enables **Dolby TrueHD/Atmos** and **DTS-HD Master Audio/DTS:X** bitstream
 passthrough over HDMI — the lossless audio formats that Blu-ray and 4K UHD
@@ -11,19 +16,17 @@ You're losing quality on every movie and you'd never know. The hardware is
 perfectly capable of sending lossless audio — Amlogic just left it gated in the
 firmware.
 
-**This module removes every one of those gates.** One flash, one reboot, and
-your $20 streaming box is sending the same bit-perfect lossless audio that
-$200+ players do.
+**This module removes those gates.** One flash, one reboot, and your $20
+streaming box sends the same bit-perfect lossless audio that $200+ players do.
 
 ## What you get
 
 - **Dolby TrueHD & Dolby Atmos** passthrough — the full lossless Dolby
-  experience, not a compressed re-encode
-- **DTS-HD Master Audio & DTS:X** passthrough — lossless DTS straight to your
-  receiver, no more silent downgrade to DTS core
-- **Zero configuration** — the module handles everything behind the scenes.
-  Your surround sound settings (Auto / Manual / None) work exactly like stock
-  Android. Auto detects what your amp supports and enables it
+  experience, not a decode-and-re-wrap
+- **DTS-HD Master Audio & DTS:X** passthrough — real lossless DTS (HDMI
+  high-bit-rate), not the DTS core downgrade
+- **Zero configuration** — the module handles everything behind the scenes
+  after each boot
 - **Fully reversible** — nothing is written to system partitions. Everything
   runs in memory. Disable the module and reboot to go back to stock
 - **Bonus unlocks** — Dolby DRC, DTS DRC, and other hidden audio settings that
@@ -35,11 +38,10 @@ $200+ players do.
 |---|---|---|
 | Dolby TrueHD | Re-encoded to DD+ | Lossless passthrough |
 | Dolby Atmos (TrueHD) | Re-encoded to DD+ | Lossless passthrough |
-| DTS-HD Master Audio | Downgraded to DTS core | Lossless passthrough |
-| DTS:X | Downgraded to DTS core | Lossless passthrough |
-| DTS-HD Master Audio (DTS-MA) | Downgraded to DTS core | **Full lossless passthrough** |
-| Dolby Digital / DD+ | Passthrough (already works) | No change |
-| DTS core | Passthrough (already works) | No change |
+| DTS-HD Master Audio | Downgraded to DTS core | **Lossless passthrough** |
+| DTS:X | Downgraded to DTS core | **Lossless passthrough** |
+| Dolby Digital / DD+ | Passthrough | Passthrough (checked) |
+| DTS core only | Passthrough | **Not yet tested with v2.1** — see Known limitations |
 
 ## Tested on
 
@@ -52,28 +54,32 @@ $200+ players do.
 | Kernel | `5.15.196-android14-11-g3d26c188ef7e-ab14657224` |
 | Magisk | 30.7 |
 
-The module only installs on the exact firmware listed above. On anything else
-it tells you it's not supported and doesn't change anything. If you get it
-working on another firmware, open an issue.
+There are two audio HAL builds in the wild on this firmware (the Canadian unit
+and the US unit differ). The module ships a patched HAL for each and picks the
+right one by the stock HAL's SHA-256. On anything it doesn't recognise it
+installs nothing and changes nothing.
+
+| Unit | Audio HAL (stock sha256) | Status |
+|---|---|---|
+| Canadian | `139a5fd5…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
+| US | `bc26b0cd…` | Patched HAL included; installs and boots clean. Playback reports welcome |
+
+If you get it working on another firmware, open an issue.
 
 ## Install
 
 1. Root your onn 4K Pro with Magisk.
-2. Flash `onn-lossless-passthrough-v2.0.zip` in Magisk and reboot.
+2. Flash `onn-lossless-passthrough-v2.1.zip` in Magisk and reboot.
 3. About a minute after boot, the sound cuts out briefly as the module kicks in.
 4. Done.
 
-Your standard surround sound settings work exactly as you'd expect:
-
-- **Auto**: the box queries your receiver's EDID, detects TrueHD and DTS-HD MA
-  support, and enables them automatically
-- **Manual**: TrueHD and DTS-HD MA now appear in the format list for you to
-  select alongside DD, DD+, DTS, etc.
-- **None**: PCM only, same as stock
+If you have the older "TrueHD/Atmos Passthrough" module installed, disable it
+first — the two modules patch the same files and can't both be active.
 
 Play a movie with a TrueHD Atmos or DTS-HD MA soundtrack and check your
-receiver — it should show the full lossless format instead of a lossy
-re-encode.
+receiver — it should show the full lossless format instead of PCM or a lossy
+re-encode. Use a player that sends the bitstream out (Nova, Kodi, VLC,
+Syncler/ExoPlayer all do).
 
 To build the zip yourself: `python3 build-zip.py`
 
@@ -82,9 +88,16 @@ To build the zip yourself: `python3 build-zip.py`
 Nothing on the system is permanently modified. Everything happens in memory
 after boot and is gone on the next reboot if the module is off.
 
-### TrueHD / Atmos
+### Real Passthrough mode
 
-Based on [Spark-NV's original work](https://github.com/Spark-NV/ONN4k-TrueHD):
+The HAL has an internal digital-audio mode: Auto (4) or Bypass (6). In Auto,
+Dolby's MS12 engine **decodes TrueHD to 8-channel PCM and re-wraps it as MAT 2.0
+(PCM)** — your receiver shows "Dolby Surround PCM". The TrueHD bypass
+(`dolby_truehd_bypass_process` → MAT encoder → HDMI) is keyed to Bypass mode in
+a dozen places, so the module sets the HAL to **Passthrough (Bypass)** after
+boot. That one change is what makes TrueHD/Atmos a true bitstream.
+
+### TrueHD / Atmos
 
 - The HDMI audio link was capped at 96 kHz. TrueHD needs 192 kHz. A small
   kernel module (`t9015rate.ko`) raises that limit in memory.
@@ -95,52 +108,54 @@ Based on [Spark-NV's original work](https://github.com/Spark-NV/ONN4k-TrueHD):
 
 ### DTS-HD MA / DTS:X
 
-The stock HAL *detects* DTS-HD from the receiver's EDID and even logs it — but
-then deliberately hides it from Android. Three binary patches to
-`audio.primary.amlogic.so` fix this:
+Four pieces, all applied in memory at boot:
 
-1. **`hdmi_encodings` handler** (34 bytes at offset `0x7ab9a`): the HAL's format
-   detection response drives the DroidLogic framework. Stock code reports AC3,
-   E_AC3, and Atmos to the framework but skips DTS-HD entirely. This patch
-   replaces dead logging code with a DTS-HD capability check that appends
-   `"dtshd;"` to the response, so the framework knows DTS-HD is available.
+**1. Make Android see DTS-HD (two patches to `audio.primary.amlogic.so`).**
+The stock HAL *detects* DTS-HD from the receiver's EDID — then hides it.
 
-2. **`sup_formats` gate** (2-byte NOP at offset `0x86f22`): the HAL reports
-   supported formats to Android's AudioPolicyManager. It correctly detects
-   DTS-HD from EDID, but gates actually *reporting* it behind a DTS decode
-   library flag. A single NOP removes that gate, so AudioPolicyManager creates
-   a full DTS-HD dynamic profile on HDMI Out with proper sample rates and
-   channel maps.
+- `hdmi_encodings` handler (34 bytes): replaces dead logging code with a
+  DTS-HD capability check that appends `"dtshd;"` to the response, so the
+  DroidLogic framework knows DTS-HD is available.
+- `sup_formats` gate (2-byte NOP): removes the check that stopped DTS-HD being
+  reported to AudioPolicyManager, so a full DTS-HD profile appears on HDMI Out.
 
-3. **`get_sink_format` AUTO→BYPASS** (1 byte each at offsets `0x8c6e2` and
-   `0x8c680`): the HAL's output-format decision function checks the internal
-   digital audio mode. Mode 6 (BYPASS) passes bitstreams raw; mode 4 (AUTO)
-   re-encodes lossless to lossy. The framework always boots the HAL into AUTO
-   mode. This patch changes `CMP r0,#6` to `CMP r0,#4` so AUTO takes the
-   BYPASS code path — DTS-HD/DTS:X/TrueHD pass through raw when the receiver
-   supports them, with graceful fallback to lossy otherwise.
+The module also adds `AUDIO_FORMAT_DTS_HD` / `AUDIO_FORMAT_DTS` profiles to the
+audio policy XML (`compress offload`, `ms12 direct`, and the HDMI Out device
+port) so apps see them in `AudioDeviceInfo.getEncodings()`.
 
-The module also adds `AUDIO_FORMAT_DTS_HD` as a static profile in the audio
-policy XML's `compress offload` and `ms12 direct` mixPorts, as a belt-and-
-suspenders alongside the dynamic profile from patch 2. It also adds DTS and
-DTS_HD profiles to the HDMI Out device port itself, so that
-`AudioDeviceInfo.getEncodings()` exposes DTS-HD to apps — without this, apps
-that check HDMI device capabilities (rather than AudioPolicyManager profiles)
-wouldn't see DTS-HD as a supported output format.
+**2. Send the *whole* DTS-HD stream, not just the core.** The stock DTS
+"decoder" (`libHwAudio_dtshd.so`, SoftDCA) only strips the DTS core
+(~1.5 Mbps) out of a DTS-HD MA stream and frames it. The module mounts a
+replacement (`src/dtshd/dtshd_passthrough.c`) that follows the stock library's
+ABI — recovered by disassembly — and instead builds an **IEC 61937-5 type IV
+(DTS-HD) HBR burst** around the complete core+extension access unit:
+`F872 4E1F | Pc=0x0411 | Pd | 01 00 … FE FE | length | DTS data`, padded to 32768
+bytes per 512-sample frame (8 channels × 192 kHz × 16 bit).
 
-All three patches together mean DTS-HD MA becomes a first-class citizen in the
-audio pipeline — visible to Android, visible to the framework, and passing
-through raw to your receiver.
+**3. Tell the HAL it's a DTS-HD HBR stream (three patches to `libamladecs.so`).**
+The Amlogic decoder wrapper hard-codes the passthrough stream as plain DTS,
+stereo, 48 kHz. Three byte-verified patches, made **at boot to your device's own
+copy** (and skipped if the bytes aren't what's expected):
 
-### Regenerating the patched HAL
+- inner format `DTS` → `DTS_HD`
+- channel count `2` → `8` (this is what routes it to the HDMI HBR device)
+- remove the 48 kHz sample-rate clamp so 192 kHz reaches the HAL
+
+**4. HDMI side.** The HAL opens the HBR device (192 kHz × 8 ch), the kernel
+HDMI transmitter is told `CT_DTS_HD`, and the receiver locks to DTS-HD MA.
+
+### Regenerating the pieces
 
 ```
-python3 patch_hal.py
+python3 patch_hal.py <stock-CA-HAL> <out>      # Canadian HAL, patches 1+2
+python3 patch_hal_us.py <stock-US-HAL> <out>   # US HAL, patches 1+2
+sh src/dtshd/build.sh                          # replacement DTS decoder (needs clang)
+python3 src/dtshd/patch_amladecs.py <in> <out> # same wrapper patches the module makes at boot
 ```
 
-Reads the stock `audio.primary.amlogic.so` and writes the patched version. The
-script verifies expected bytes at each patch site before writing, so it won't
-silently produce a broken binary on the wrong input.
+Every script verifies the expected bytes at each patch site before writing, so
+it won't silently produce a broken binary on the wrong input. The full
+reverse-engineering notes are in [`src/dtshd/NOTES.md`](src/dtshd/NOTES.md).
 
 ## Other settings it unlocks
 
@@ -154,6 +169,9 @@ The module also enables hidden audio options that onn left in the firmware:
 
 ## Known limitations
 
+- **DTS core-only tracks** (plain DTS 5.1, no HD extension) are sent as a DTS-HD
+  burst by the replacement decoder. That hasn't been verified against a
+  receiver yet — if you have a plain-DTS file, please test and report.
 - **96 kHz TrueHD** (rare — mostly music and test files) plays as stereo PCM.
   That's Dolby's own code on the box. 48 kHz TrueHD, which is what movies use,
   works fine.
@@ -161,6 +179,8 @@ The module also enables hidden audio options that onn left in the firmware:
   device doing bitstream passthrough — the HDMI link is carrying a raw encoded
   stream, so PCM system sounds can't be mixed in. They come back as soon as
   playback stops.
+- The module sets the HAL to Passthrough mode at boot, so the box behaves as
+  "passthrough" for every format your receiver supports.
 
 ## Removing it
 
@@ -176,8 +196,10 @@ breaks.
 ## Source
 
 - `module/` — the Magisk module
-- `module/hal/` — the patched audio HAL binary
-- `patch_hal.py` — reproduces the patched HAL from the stock binary
+- `module/hal/` — the patched audio HALs (Canadian and US) and the replacement DTS decoder
+- `module/common/dtshd.sh` — boot-time patching/mounting of the DTS-HD pieces
+- `patch_hal.py`, `patch_hal_us.py` — reproduce the patched HALs from the stock binaries
+- `src/dtshd/` — replacement DTS decoder source, wrapper patcher, and reverse-engineering notes
 - `src/kernel/` — the 192 kHz kernel helper and how to build it
 - `src/overlay/` — the Settings overlay and its build script
 
@@ -185,6 +207,7 @@ breaks.
 
 - [Spark-NV](https://github.com/Spark-NV) for the original TrueHD passthrough
   module, kernel helper, and Settings overlay
-- DTS-HD MA / DTS:X passthrough by [kushmint](https://github.com/kushmint)
+- DTS-HD MA / DTS:X lossless passthrough, the TrueHD bypass fix, and US-unit
+  support by [kushmint](https://github.com/kushmint)
 
 The kernel helper is GPL-2.0.
