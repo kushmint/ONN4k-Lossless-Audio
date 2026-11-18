@@ -2,7 +2,7 @@
 """
 Patch audio.primary.amlogic.so to enable DTS-HD MA / DTS:X passthrough.
 
-Three binary patches:
+Four binary patches:
 
 Patch 1 — hdmi_encodings handler (VA 0x9ab9a, 34 bytes)
   Replaces dead logging code with a check of the DTS_HD capability flag
@@ -28,6 +28,20 @@ Patch 3 — get_sink_format AUTO→BYPASS redirect (2 × 1 byte)
   like BYPASS: DTS-HD/DTS:X/TrueHD pass through when the sink supports
   them, with graceful fallback otherwise.
 
+Patch 4 — DTS render: force digital_raw=2 and is_iec61937=1 (2 bytes)
+  The DTS render path in dts_decoder_config_prepare (internal function at
+  Ghidra VA 0xbfcb0, called from aml_decoder_config_prepare) has two
+  code paths: case-1 (adev->0x6bc==1, DTS Core library) and case-2
+  (adev->0x6bc==2, DTS-HD library). The ONN firmware uses case-1.
+
+  In case-1, digital_raw is hardcoded to 1 (SPDIF passthrough, extracts
+  DTS Core ~1.5 Mbps) and is_iec61937 is forced to 0 for STB devices
+  (is_tv_stream_out check). DTS-HD MA needs digital_raw=2 (IEC61937 HBR,
+  full ~24.5 Mbps bitstream) and is_iec61937=1 to route through HDMI.
+
+  Patch 4a: MOVS r0,#1 → MOVS r0,#2 at Ghidra VA 0xbfd3a (digital_raw)
+  Patch 4b: MOVS r0,#0 → MOVS r0,#1 at Ghidra VA 0xbfd60 (is_iec61937)
+
 IMPORTANT: bind-mounted files MUST have SELinux context u:object_r:vendor_file:s0
 or audioserver crashes with "HW_AV_SYNC requested but HAL does not implement
 pause and resume". The crash is from SELinux denying access to the stream's
@@ -40,6 +54,11 @@ import struct
 import sys
 import os
 import hashlib
+
+# Patch 3 (AUTO->BYPASS in get_sink_format) is OFF: the module now puts the HAL in real Passthrough mode
+# (BYPASS=6) instead, which makes MS12/TrueHD bypass and DTS-HD work. Patch 4 deadlocks. Shipped HALs = patches 1+2.
+APPLY_PATCH3 = False
+APPLY_PATCH4 = False
 
 STOCK_SHA256 = None  # set after first successful patch to lock it down
 
@@ -157,19 +176,36 @@ def patch(input_path, output_path):
         "CBZ mismatch at VA 0xa6f22 — wrong binary?"
     data[nop_off:nop_off+2] = bytes.fromhex('00bf')  # NOP
 
-    # ── Patch 3: get_sink_format AUTO→BYPASS redirect ──
-    # Change CMP r0,#6 to CMP r0,#4 so AUTO mode (4) takes the BYPASS path
-    # Non-TV path (Ghidra VA 0xac6e2)
-    bypass_off1 = va_to_file(0xac6e2)
-    assert bytes(data[bypass_off1:bypass_off1+2]) == bytes.fromhex('0628'), \
-        "CMP mismatch at VA 0xac6e2 (non-TV mode check) — wrong binary?"
-    data[bypass_off1] = 0x04  # CMP r0,#6 → CMP r0,#4
+    if APPLY_PATCH3:
+        # ── Patch 3: get_sink_format AUTO→BYPASS redirect ──
+        # Change CMP r0,#6 to CMP r0,#4 so AUTO mode (4) takes the BYPASS path
+        # Non-TV path (Ghidra VA 0xac6e2)
+        bypass_off1 = va_to_file(0xac6e2)
+        assert bytes(data[bypass_off1:bypass_off1+2]) == bytes.fromhex('0628'), \
+            "CMP mismatch at VA 0xac6e2 (non-TV mode check) — wrong binary?"
+        data[bypass_off1] = 0x04  # CMP r0,#6 → CMP r0,#4
 
-    # TV path (Ghidra VA 0xac680)
-    bypass_off2 = va_to_file(0xac680)
-    assert bytes(data[bypass_off2:bypass_off2+2]) == bytes.fromhex('0628'), \
-        "CMP mismatch at VA 0xac680 (TV mode check) — wrong binary?"
-    data[bypass_off2] = 0x04  # CMP r0,#6 → CMP r0,#4
+        # TV path (Ghidra VA 0xac680)
+        bypass_off2 = va_to_file(0xac680)
+        assert bytes(data[bypass_off2:bypass_off2+2]) == bytes.fromhex('0628'), \
+            "CMP mismatch at VA 0xac680 (TV mode check) — wrong binary?"
+        data[bypass_off2] = 0x04  # CMP r0,#6 → CMP r0,#4
+
+    if APPLY_PATCH4:
+        # ── Patch 4: DTS render is_iec61937 + digital_raw ──
+        # Requires custom libHwAudio_dtshd.so passthrough library (digital_raw=2).
+
+        # Patch 4a: Enable digital_raw=2 for full DTS-HD MA passthrough
+        # This enables the HAL to pass through full DTS-HD MA bitstream
+        raw_off = va_to_file(0xbfd3a)
+        assert bytes(data[raw_off:raw_off+2]) == bytes.fromhex('0120')
+        data[raw_off] = 0x02
+
+        # Patch 4b: Enable is_iec61937=1 for HDMI IEC61937 routing
+        # This routes the bitstream through HDMI instead of SPDIF
+        iec_off = va_to_file(0xbfd60)
+        assert bytes(data[iec_off:iec_off+2]) == bytes.fromhex('0020')
+        data[iec_off] = 0x01
 
     with open(output_path, 'wb') as f:
         f.write(data)
@@ -190,4 +226,6 @@ if __name__ == '__main__':
         input_path = os.path.expanduser('~/Projects/onn audio hal module/pulled/audio.primary.amlogic.so')
         output_path = os.path.expanduser('~/Projects/onn audio hal module/pulled/audio.primary.amlogic.patched.so')
 
+    if len(sys.argv) == 3:
+        input_path, output_path = sys.argv[1], sys.argv[2]
     patch(input_path, output_path)

@@ -7,6 +7,16 @@ jarvis2|5.15.196-android14-11-g3d26c188ef7e-ab14657224|a8d99a85c38e78a7850ae25aa
 jarvis2|5.15.196-android14-11-g3d26c188ef7e-ab14657224|98a914e0fa1b3755d4caf1db1912f5e7f4eb1e9923f5891786b503c6e3941c43
 "
 
+# Audio HAL builds we have patched. The CA and US boxes ship different HAL builds, so the patched
+# HAL must match the stock one exactly (otherwise we would mount the wrong build).
+HAL_STOCK_CA=139a5fd567cddfb726669d0d4296817ebed4b17495c5af18e04064d184cb58e0
+HAL_STOCK_US=bc26b0cda948f2021b35c7c2f95ced32809babc9bedc30a8e817deee2e91b228
+HAL_PATCHED_CA=2aaf74134edcf544c396540c1ae6a2b554a97a1c3c09f633ea5b02745ce82638
+HAL_PATCHED_US=5a9b8238a36f332eaa11a43130a210b7b26f68b388c5fc590f29c90bf8032b79
+# earlier v2.0/v2.1-dev patched builds (patch 3 variants), still recognised if one is mounted
+HAL_OLD_CA=f56c5262a1efb5c2d1c70e9380958a24058e3580cdbd2e27284895969dc84a14
+HAL_OLD_US=1e11233be59f7cc91693dddb0c7a9898c9a017c71316cf61679a2454e09cc409
+
 T9015_KO=/vendor/lib/modules/amlogic-snd-codec-t9015.ko
 AUDIO_HAL=/vendor/lib/hw/audio.primary.amlogic.so
 POLICY=/odm/etc/audio_policy_configuration.xml
@@ -76,6 +86,14 @@ settings_overlay_compatible() {
 	[ "$(sha256sum "$TVSETTINGS_APK" 2>/dev/null | cut -d' ' -f1)" = "$TVSETTINGS_SHA256" ]
 }
 
+# Prints ca or us for a known audio HAL build (stock or already patched), nothing otherwise.
+hal_variant() {
+	case "$(sha256sum "$AUDIO_HAL" 2>/dev/null | cut -d' ' -f1)" in
+	"$HAL_STOCK_CA" | "$HAL_PATCHED_CA" | "$HAL_OLD_CA") echo ca ;;
+	"$HAL_STOCK_US" | "$HAL_PATCHED_US" | "$HAL_OLD_US") echo us ;;
+	esac
+}
+
 compat_check() {
 	local device kernel ko_sum line
 	device=$(getprop ro.product.device)
@@ -87,6 +105,7 @@ compat_check() {
 	for line in $SUPPORTED_BUILDS; do
 		if [ "$line" = "$device|$kernel|$ko_sum" ]; then
 			[ -f "$AUDIO_HAL" ] || { COMPAT_REASON="audio HAL not found"; return 1; }
+			[ -n "$(hal_variant)" ] || { COMPAT_REASON="audio HAL is not a build this module has patched"; return 1; }
 			$BB grep -q "$TRUEHD_PROP" "$AUDIO_HAL" 2>/dev/null || {
 				COMPAT_REASON="audio HAL has no TrueHD passthrough switch"
 				return 1

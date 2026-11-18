@@ -7,8 +7,9 @@
 #   3. mount a copy of the audio policy with TrueHD and DTS_HD added
 #   4. mount a copy of aml_audio_config.json with hidden options turned on
 #   5. flip the TrueHD prop on and the "always DD+" prop off
+#   5b. DTS-HD MA over HDMI HBR: patched libamladecs.so + replacement DTS decoder (common/dtshd.sh)
 #   6. restart audio so it all takes effect
-#   7. set the HAL's internal mode to Passthrough so bitstreams go through raw
+#   7. set the HAL to real Passthrough (BYPASS) mode so TrueHD/DTS-HD bitstreams go through raw
 #   8. turn on the "Audio output mode" row in Settings
 #
 # The user's surround sound setting (Auto / Manual / None) in the standard
@@ -25,6 +26,7 @@ PENDING=$STATE/apply.pending
 GEN_POLICY=$STATE/audio_policy_configuration.xml
 GEN_AML_CONFIG=$STATE/aml_audio_config.json
 HELPER=$MODDIR/kernel/t9015rate.ko
+. "$MODDIR/common/dtshd.sh"
 
 mkdir -p "$STATE"
 [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 65536 ] && {
@@ -79,6 +81,8 @@ overlay_set() { /system/bin/cmd overlay "$1" --user 0 "$OVERLAY_PKG" >/dev/null 
 
 rollback() {
 	log "rolling back"
+	unbind "$DTS_LIB"
+	unbind "$AMLADECS"
 	unbind "$AML_CONFIG"
 	unbind "$POLICY"
 	unbind "$AUDIO_HAL"
@@ -201,10 +205,15 @@ if ! grep -q '^t9015rate ' /proc/modules; then
 fi
 
 # 2. Patched HAL with DTS-HD support
-PATCHED_HAL="$MODDIR/hal/audio.primary.amlogic.patched.so"
+case "$(hal_variant)" in
+ca) PATCHED_HAL="$MODDIR/hal/audio.primary.amlogic.patched.so" ;;
+us) PATCHED_HAL="$MODDIR/hal/audio.primary.amlogic.patched.us.so" ;;
+*) fail "audio HAL is not a build this module has patched" ;;
+esac
 if [ ! -f "$PATCHED_HAL" ]; then
 	fail "patched HAL binary not found"
 fi
+log "HAL variant: $(hal_variant)"
 cp "$PATCHED_HAL" "$STATE/audio.primary.amlogic.so"
 chmod 0644 "$STATE/audio.primary.amlogic.so"
 chcon u:object_r:vendor_file:s0 "$STATE/audio.primary.amlogic.so"
@@ -231,17 +240,21 @@ resetprop "$TRUEHD_PROP" true
 resetprop "$FORCEDDP_PROP" false
 log "props set ($FORCEDDP_PROP was '$OLD_FORCEDDP')"
 
+# 5b. DTS-HD MA lossless (HBR). Non-fatal: if the wrapper is not the expected build this is
+#     skipped and DTS Core passthrough keeps working with the stock libraries.
+apply_dtshd || log "DTS-HD MA lossless not enabled (see above); DTS Core only"
+
 # 6. Restart audio services so they pick up the new HAL and policy
 audio_restart || fail "audio services did not come back" rollback
 droidaudio_restart || fail "vendor audio service did not come back" rollback
 log "audio services restarted"
 
-# 7. Set DroidAudio to Auto (1). The patched HAL treats AUTO mode (4) as
-#    BYPASS internally — it passes lossless bitstreams raw when the sink
-#    supports them. We set mode 1 (Auto → HAL mode 4) so the patched
-#    path is taken whether or not DroidAudio pushes hdmi_format to the HAL.
+# 7. Put the HAL in real Passthrough mode (DroidAudio 3 -> HAL BYPASS=6). The MS12 TrueHD bypass and
+#    DTS-HD paths all key off BYPASS; in Auto the HAL decodes TrueHD to PCM in MS12 and re-wraps it as
+#    MAT 2.0 (PCM). Verified on the Canadian box: TrueHD and DTS-HD MA both bitstream correctly in
+#    Passthrough with the patched HAL (patches 1+2 only).
 mode=$(digital_mode_get)
-digital_mode_set 1 || log "WARN: could not set DroidAudio to Auto (non-fatal, HAL defaults to AUTO anyway)"
+digital_mode_set 3 || log "WARN: could not set DroidAudio to Passthrough"
 log "DroidAudio mode set (was: $(mode_name "$mode"), now: $(mode_name "$(digital_mode_get)"))"
 log "HAL reports: $(hal_mode)"
 
@@ -252,4 +265,8 @@ if settings_overlay_compatible && overlay_set enable; then
 	log "Settings row enabled"
 fi
 
-set_status "Active. TrueHD/Atmos + DTS-HD MA/DTS:X lossless passthrough enabled. Use surround sound settings (Auto/Manual) as normal. Log: $LOG"
+if [ "$DTSHD_MOUNTED" = 1 ]; then
+	set_status "Active. TrueHD/Atmos + DTS-HD MA lossless passthrough enabled. Use surround sound settings (Auto/Manual) as normal. Log: $LOG"
+else
+	set_status "Active. TrueHD/Atmos lossless + DTS Core passthrough (DTS-HD MA not available on this build). Log: $LOG"
+fi

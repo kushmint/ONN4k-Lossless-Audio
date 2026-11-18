@@ -7,3 +7,5 @@ src/kernel/*.mod*
 src/kernel/.*.cmd
 src/kernel/Module.symvers
 src/kernel/modules.order
+__pycache__/
+src/dtshd/*.so
