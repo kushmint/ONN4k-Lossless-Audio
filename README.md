@@ -80,7 +80,8 @@ If you get it working on another firmware, open an issue.
 
 ## Install
 
-1. Root your onn 4K Pro with Magisk.
+1. Root your onn 4K Pro with Magisk. Don't have root yet? Use the unlock and
+   root script: [onn-4k-pro-2026-unlock-root](https://github.com/kushmint/onn-4k-pro-2026-unlock-root).
 2. Flash `onn-lossless-passthrough-v2.1.zip` in Magisk and reboot.
 3. About a minute after boot, the sound cuts out briefly as the module kicks in.
 4. Done.
