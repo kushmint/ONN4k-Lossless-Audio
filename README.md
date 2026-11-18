@@ -45,18 +45,22 @@ streaming box sends the same bit-perfect lossless audio that $200+ players do.
 
 ## Tested on
 
-| | |
-|---|---|
-| Device | onn 4K Pro Streaming Device (2026), codename `jarvis2` |
-| Chip | Amlogic S905X5M |
-| Android | Android TV 14 (API 34) |
-| Firmware | `URO3.260203.035.A1.15640252` |
-| Kernel | `5.15.196-android14-11-g3d26c188ef7e-ab14657224` |
-| Magisk | 30.7 |
+Two units, with **different firmware builds** (and different audio HALs):
 
-Tested on **both a Canadian and a US unit**. Both report the identical firmware
-and kernel above, yet their audio HALs (`audio.primary.amlogic.so`) are
-different builds, so a single patched binary can't serve both.
+| | Canadian unit | US unit |
+|---|---|---|
+| Device | onn 4K Pro Streaming Device (2026), `jarvis2` | same |
+| Product | `jarvis2_row` | `jarvis2` |
+| Chip | Amlogic S905X5M | same |
+| Android | Android TV 14 (API 34) | same |
+| Firmware | `URO3.260203.009.A2.15016191` (built 2026-03-12) | `URO3.260203.035.A1.15640252` (built 2026-06-15) |
+| Security patch | 2026-02-01 | 2026-06-01 |
+| Kernel | `5.15.196-android14-11-g3d26c188ef7e-ab14657224` | same |
+| Magisk | 30.7 | 30.7 |
+
+The kernel is the same on both, but the firmware builds differ, and so do their
+audio HALs (`audio.primary.amlogic.so`), so a single patched binary can't serve
+both.
 
 ### HAL version check
 
@@ -69,7 +73,7 @@ mismatch.
 
 | Unit | Firmware | Audio HAL (stock sha256) | Status |
 |---|---|---|---|
-| Canadian | `URO3.260203.035.A1.15640252` | `139a5fd5…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
+| Canadian | `URO3.260203.009.A2.15016191` | `139a5fd5…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
 | US | `URO3.260203.035.A1.15640252` | `bc26b0cd…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
 
 If you get it working on another firmware, open an issue.
