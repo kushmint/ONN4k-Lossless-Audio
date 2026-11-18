@@ -1,6 +1,6 @@
 id=onn_lossless_passthrough
 name=onn 4K Pro Lossless Audio Passthrough
-version=v2.0
-versionCode=2
+version=v2.1
+versionCode=3
 author=kushmint
-description=TrueHD/Atmos and DTS-HD MA/DTS:X bitstreaming over HDMI on the onn 4K Pro (2026, S905X5M). Applies after boot, in memory only.
+description=TrueHD/Atmos and DTS-HD MA lossless bitstreaming over HDMI on the onn 4K Pro (2026, S905X5M). Applies after boot, in memory only.

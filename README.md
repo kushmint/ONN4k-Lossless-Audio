@@ -37,6 +37,7 @@ $200+ players do.
 | Dolby Atmos (TrueHD) | Re-encoded to DD+ | Lossless passthrough |
 | DTS-HD Master Audio | Downgraded to DTS core | Lossless passthrough |
 | DTS:X | Downgraded to DTS core | Lossless passthrough |
+| DTS-HD Master Audio (DTS-MA) | Downgraded to DTS core | **Full lossless passthrough** |
 | Dolby Digital / DD+ | Passthrough (already works) | No change |
 | DTS core | Passthrough (already works) | No change |
 
