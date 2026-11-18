@@ -54,15 +54,23 @@ streaming box sends the same bit-perfect lossless audio that $200+ players do.
 | Kernel | `5.15.196-android14-11-g3d26c188ef7e-ab14657224` |
 | Magisk | 30.7 |
 
-There are two audio HAL builds in the wild on this firmware (the Canadian unit
-and the US unit differ). The module ships a patched HAL for each and picks the
-right one by the stock HAL's SHA-256. On anything it doesn't recognise it
-installs nothing and changes nothing.
+Tested on **both a Canadian and a US unit**. Both report the identical firmware
+and kernel above, yet their audio HALs (`audio.primary.amlogic.so`) are
+different builds, so a single patched binary can't serve both.
 
-| Unit | Audio HAL (stock sha256) | Status |
-|---|---|---|
-| Canadian | `139a5fd5…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
-| US | `bc26b0cd…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ (same as the Canadian unit) |
+### HAL version check
+
+The module ships a patched HAL for each build and, at every boot, hashes the
+device's stock HAL (SHA-256) and picks the matching one. **If the hash matches
+neither known build, the module installs nothing and changes nothing** (it fails
+closed), so it can't break an unrecognised firmware. The `libamladecs.so`
+patches are likewise byte-verified before being applied and skipped on any
+mismatch.
+
+| Unit | Firmware | Audio HAL (stock sha256) | Status |
+|---|---|---|---|
+| Canadian | `URO3.260203.035.A1.15640252` | `139a5fd5…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
+| US | `URO3.260203.035.A1.15640252` | `bc26b0cd…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
 
 If you get it working on another firmware, open an issue.
 
