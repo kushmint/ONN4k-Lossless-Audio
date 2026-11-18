@@ -62,7 +62,7 @@ installs nothing and changes nothing.
 | Unit | Audio HAL (stock sha256) | Status |
 |---|---|---|
 | Canadian | `139a5fd5…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ |
-| US | `bc26b0cd…` | Patched HAL included; installs and boots clean. Playback reports welcome |
+| US | `bc26b0cd…` | Fully tested: DTS-HD MA, DTS:X, TrueHD, DD+ (same as the Canadian unit) |
 
 If you get it working on another firmware, open an issue.
 
