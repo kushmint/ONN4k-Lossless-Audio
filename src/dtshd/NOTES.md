@@ -51,3 +51,21 @@ Patching 6 more CMP sites (AUTO->6) did NOT help. The original onn_truehd_passth
 ships no HAL patch at all: it relies on the user selecting Audio output mode = Passthrough.
 Fix: HAL patches 1+2 only (no patch 3/4) + DroidAudio mode 3 (Passthrough -> HAL BYPASS). Verified on the dev box:
 TrueHD and DTS-HD MA both play as bitstreams. Shipped CA HAL sha 2aaf7413..., US HAL 5a9b8238... (US untested).
+
+## v15 (2026-11-27): per-frame burst timing (44.1 kHz DTS fix)
+Reddit report: "DTS 5.1 48 kHz breaking up, DTS x96 fine; AAC 5.1/7.1 don't play". Tested on the dev box (Denon AVR):
+- 48 kHz DTS core and DTS-HD MA: clean in Just Player (ExoPlayer, raw DTS -> this lib) and in Kodi (Kodi's own
+  IEC packer -> AUDIO_FORMAT_IEC61937 -> HAL iec_passthrough, which never touches this lib). Not reproduced.
+- 44.1 kHz DTS core: **silent** with v14. v14 always declared a 192 kHz link + subtype 4 (8192-sample period),
+  i.e. 512 samples @ 48 kHz, so the burst rate was wrong for anything else.
+- v15 parses the core header (NBLKS, SFREQ): link 192000 (48k family) / 176400 (44.1k family) via fmt[0], period =
+  samples * link*4/fs, subtype = log2(period/512), burst = period*4 B, carrier = period B. HAL accepts fmt[0]=176400
+  (`pcm_open card=0 device=1 rt=176400 ch=8`), amp shows DTS, clean. 48k core / MA output is unchanged from v14
+  except Pd is now padded so (Pd & 0xf) == 8 (ffmpeg spdifenc does this; "needed with some receivers").
+- Not handled: periods > 8192 (e.g. 1024-sample 48 kHz frames would need a 65536 B burst; the wrapper's out_buf2
+  size beyond 32 KB is unknown) -> v14 timing. 32 kHz has no integer HBR ratio -> v14 timing.
+- No division in the lib: built -nostdlib, so __aeabi_idiv/uidiv are unresolved (table + shifts instead).
+- AAC 5.1/7.1: 6/8-ch PCM_DIRECT opens on card0 device1 and plays in Just Player, Nova and Kodi. VLC 3.0.25 opens
+  the DIRECT track and never writes a frame (server pos 0, track removed after ~2 s); identical with the module
+  fully unmounted (stock HAL, AUTO), so it's VLC, not the module.
+- Note: restarting vendor.audio-hal drops the HAL back to AUTO; re-push mode via DroidAudio call 21 (1, then 3).

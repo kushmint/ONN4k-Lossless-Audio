@@ -1,6 +1,6 @@
 # onn 4K Pro — Full Lossless Audio Passthrough
 
-### ⬇️ [Download onn-lossless-passthrough-v2.1.zip](https://github.com/kushmint/ONN4k-Lossless-Audio/releases/latest/download/onn-lossless-passthrough-v2.1.zip)
+### ⬇️ [Download onn-lossless-passthrough-v2.2.zip](https://github.com/kushmint/ONN4k-Lossless-Audio/releases/latest/download/onn-lossless-passthrough-v2.2.zip)
 Flash it in Magisk and reboot. [All releases](https://github.com/kushmint/ONN4k-Lossless-Audio/releases)
 
 ---
@@ -41,7 +41,7 @@ streaming box sends the same bit-perfect lossless audio that $200+ players do.
 | DTS-HD Master Audio | Downgraded to DTS core | **Lossless passthrough** |
 | DTS:X | Downgraded to DTS core | **Lossless passthrough** |
 | Dolby Digital / DD+ | Passthrough | Passthrough (checked) |
-| DTS core only | Passthrough | **Not yet tested with v2.1** — see Known limitations |
+| DTS core only (48 kHz and 44.1 kHz) | Passthrough | Passthrough (checked, v2.2) |
 
 ## Tested on
 
@@ -82,7 +82,7 @@ If you get it working on another firmware, open an issue.
 
 1. Root your onn 4K Pro with Magisk. Don't have root yet? Use the unlock and
    root script: [onn-4k-pro-2026-unlock-root](https://github.com/kushmint/onn-4k-pro-2026-unlock-root).
-2. Flash `onn-lossless-passthrough-v2.1.zip` in Magisk and reboot.
+2. Flash `onn-lossless-passthrough-v2.2.zip` in Magisk and reboot.
 3. About a minute after boot, the sound cuts out briefly as the module kicks in.
 4. Done.
 
@@ -142,8 +142,11 @@ port) so apps see them in `AudioDeviceInfo.getEncodings()`.
 replacement (`src/dtshd/dtshd_passthrough.c`) that follows the stock library's
 ABI — recovered by disassembly — and instead builds an **IEC 61937-5 type IV
 (DTS-HD) HBR burst** around the complete core+extension access unit:
-`F872 4E1F | Pc=0x0411 | Pd | 01 00 … FE FE | length | DTS data`, padded to 32768
-bytes per 512-sample frame (8 channels × 192 kHz × 16 bit).
+`F872 4E1F | Pc | Pd | 01 00 … FE FE | length | DTS data`. The burst timing is
+read from each frame's DTS core header: a 512-sample 48 kHz frame (what nearly
+every film uses) is padded to 32768 bytes on a 192 kHz × 8 ch link (`Pc=0x0411`);
+44.1 kHz streams run the link at 176.4 kHz instead, and 256-sample frames use a
+half-length burst. (v2.1 hardcoded the 48 kHz timing, so 44.1 kHz DTS was silent.)
 
 **3. Tell the HAL it's a DTS-HD HBR stream (three patches to `libamladecs.so`).**
 The Amlogic decoder wrapper hard-codes the passthrough stream as plain DTS,
@@ -188,8 +191,20 @@ The module also enables hidden audio options that onn left in the firmware:
 ## Known limitations
 
 - **DTS core-only tracks** (plain DTS 5.1, no HD extension) are sent as a DTS-HD
-  burst by the replacement decoder. That hasn't been verified against a
-  receiver yet — if you have a plain-DTS file, please test and report.
+  burst by the replacement decoder; receivers show them as plain DTS. Checked at
+  48 kHz and 44.1 kHz in Just Player (ExoPlayer) and Kodi. DTS streams with
+  1024-sample frames (rare) still use the 48 kHz/512 timing — if a plain-DTS file
+  breaks up for you, please open an issue with the player name and the file's
+  MediaInfo.
+- **"Dolby Atmos" instead of "Dolby TrueHD" on Samsung soundbars.** Over HDMI,
+  TrueHD always travels inside a MAT container. Samsung bars (Q990 series) show any
+  TrueHD Atmos stream as "Dolby Atmos", so this alone doesn't mean it was decoded.
+  v2.0 really did decode TrueHD to PCM-in-MAT (Auto mode); since v2.1 the HAL runs
+  in Passthrough and sends the original TrueHD. An AVR that shows the input format
+  will show Dolby TrueHD / Atmos.
+- **Multichannel AAC in VLC is silent** (the amp shows multichannel PCM, no sound).
+  That also happens with the module disabled — VLC never writes audio to the 5.1/7.1
+  output on this box. Just Player, Nova and Kodi play the same files fine.
 - **96 kHz TrueHD** (rare — mostly music and test files) plays as stereo PCM.
   That's Dolby's own code on the box. 48 kHz TrueHD, which is what movies use,
   works fine.
